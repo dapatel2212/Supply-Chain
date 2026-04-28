@@ -1,0 +1,21 @@
+{
+  "eta": {
+    "mae_hours": 20.47,
+    "r2_score": 0.894
+  },
+  "delay": {
+    "accuracy": 0.75
+  },
+  "sea_duration": {
+    "mae_hours": 20.74
+  },
+  "port_processing": {
+    "mae_hours": 0.0
+  },
+  "route_optimizer": {
+    "accuracy": 0.716
+  },
+  "risk_assessment": {
+    "mae_hours": 19.46
+  }
+}

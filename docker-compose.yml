@@ -1,0 +1,124 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: shiptrack_postgres
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: password123
+      POSTGRES_DB: shipment_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d shipment_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: shiptrack_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: shiptrack_backend
+    ports:
+      - "5000:5000"
+    environment:
+      DATABASE_URL: postgresql://admin:password123@postgres:5432/shipment_db
+      REDIS_URL: redis://redis:6379/0
+      FLASK_ENV: production
+      FLASK_APP: app.py
+      JWT_SECRET_KEY: shiptrack-secret-key-prod
+      # TimescaleDB — your CSV supply_chain data (runs on host port 5433)
+      TIMESCALE_URL: postgresql://postgres:Dhairya%402212@host.docker.internal:5433/supply_chain
+      TOMTOM_API_KEY: ${TOMTOM_API_KEY}
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      OPENWEATHER_API_KEY: ${OPENWEATHER_API_KEY}
+      GMAIL_SENDER: ${GMAIL_SENDER}
+      GMAIL_PASSWORD: ${GMAIL_PASSWORD}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+    command: gunicorn --bind 0.0.0.0:5000 app:app
+
+  celery_worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: shiptrack_celery_worker
+    environment:
+      DATABASE_URL: postgresql://admin:password123@postgres:5432/shipment_db
+      REDIS_URL: redis://redis:6379/0
+      FLASK_ENV: production
+      TIMESCALE_URL: postgresql://postgres:Dhairya%402212@host.docker.internal:5433/supply_chain
+    depends_on:
+      - postgres
+      - redis
+    volumes:
+      - ./backend:/app
+    command: celery -A celery_app worker --loglevel=info
+
+  celery_beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: shiptrack_celery_beat
+    environment:
+      DATABASE_URL: postgresql://admin:password123@postgres:5432/shipment_db
+      REDIS_URL: redis://redis:6379/0
+      FLASK_ENV: production
+      TIMESCALE_URL: postgresql://postgres:Dhairya%402212@host.docker.internal:5433/supply_chain
+    depends_on:
+      - postgres
+      - redis
+    volumes:
+      - ./backend:/app
+    command: celery -A celery_app beat --loglevel=info
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        REACT_APP_TOMTOM_KEY: WJ5FkAbWMQncWtdliPXWKwJtoLjkoU8r
+        REACT_APP_API_URL: http://localhost:5000
+    container_name: shiptrack_frontend
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: development
+      REACT_APP_API_URL: http://localhost:5000
+    depends_on:
+      - backend
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    stdin_open: true
+    tty: true
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  default:
+    name: shiptrack_network
